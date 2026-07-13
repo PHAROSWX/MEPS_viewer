@@ -200,13 +200,13 @@
         return pref.match.some((m) => hay.includes(m.toLowerCase()));
       });
       if (found && !used.has(found.name)) {
-        matched.push({ ...found, label: pref.label, unit: pref.unit });
+        matched.push({ ...found, label: pref.label, unit: pref.unit, kind: pref.kind, convert: (v) => v });
         used.add(found.name);
       }
     }
     // Add any remaining layers (capped) so nothing discoverable is hidden.
     const rest = state.layers.filter((l) => !used.has(l.name)).slice(0, 12);
-    for (const r of rest) matched.push({ ...r, label: r.title, unit: "" });
+    for (const r of rest) matched.push({ ...r, label: r.title, unit: "", kind: null, convert: (v) => v });
 
     if (!matched.length) {
       el.fieldList.innerHTML = '<p class="deck-note">No layers found in capabilities document.</p>';
@@ -233,7 +233,7 @@
   // Selecting a field: swap the WMS tile layer, rebuild the time slider,
   // fetch the legend graphic.
   // ---------------------------------------------------------------------
-  function selectField(field, btnEl) {
+  async function selectField(field, btnEl) {
     document.querySelectorAll(".field-btn").forEach((b) => b.classList.remove("active"));
     if (btnEl) btnEl.classList.add("active");
 
@@ -246,6 +246,40 @@
     updateWmsLayer();
     updateLegend(field);
     updateRunClock(field);
+    await resolveServerUnits(field); // may correct field.unit once the server responds
+  }
+
+  // ---------------------------------------------------------------------
+  // Ask the server what unit this layer is actually in (ncWMS's
+  // non-standard GetMetadata&item=layerDetails request returns this as
+  // JSON), rather than trusting our own guess in config.js. Falls back to
+  // the configured default if the server doesn't support this request.
+  // ---------------------------------------------------------------------
+  async function resolveServerUnits(field) {
+    const url = state.wmsBase +
+      (state.wmsBase.includes("?") ? "&" : "?") +
+      `request=GetMetadata&item=layerDetails&layerName=${encodeURIComponent(field.name)}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      const rawUnit = data && (data.units || data.unit);
+      if (rawUnit && field === state.activeLayer) {
+        field.rawUnit = rawUnit;
+        const conv = MEPS_CONFIG.CF_UNIT_CONVERSIONS[rawUnit];
+        field.unit = conv ? conv.to : rawUnit;
+        field.convert = conv ? conv.fn : (v) => v;
+        // Refresh anything already showing the old unit guess.
+        const btn = [...document.querySelectorAll(".field-btn")].find((b) => b.classList.contains("active"));
+        if (btn) {
+          const unitSpan = btn.querySelector(".unit");
+          if (unitSpan) unitSpan.textContent = field.unit;
+        }
+      }
+    } catch (err) {
+      // Server doesn't support GetMetadata (not all WMS implementations do) —
+      // silently keep the config.js default. Not fatal.
+    }
   }
 
   function rebuildTimeline(field) {
@@ -340,9 +374,30 @@
   }
 
   // ---------------------------------------------------------------------
-  // Legend via GetLegendGraphic
+  // Legend: prefer the user's own QML color-ramp (palettes.js) so the
+  // legend always matches their color science, regardless of whatever
+  // default palette the WMS server happens to render tiles with. Falls
+  // back to the server's GetLegendGraphic when there's no custom palette
+  // for this field.
   // ---------------------------------------------------------------------
+  const legendCanvas = document.getElementById("legend-canvas");
+  const legendNote = document.getElementById("legend-source-note");
+
   function updateLegend(field) {
+    const paletteName = field.kind && PALETTE_BY_KIND[field.kind];
+
+    if (paletteName) {
+      legendCanvas.style.display = "block";
+      el.legendImg.style.display = "none";
+      el.legendEmpty.style.display = "none";
+      renderPaletteLegend(legendCanvas, paletteName);
+      legendNote.textContent = `Custom palette (${paletteName}.qml) — colors are reference only; ` +
+        `map tiles above still use MET Norway's own WMS rendering.`;
+      return;
+    }
+
+    legendCanvas.style.display = "none";
+    legendNote.textContent = "";
     const url = state.wmsBase +
       (state.wmsBase.includes("?") ? "&" : "?") +
       `service=WMS&request=GetLegendGraphic&format=image/png&layer=${encodeURIComponent(field.name)}&width=40&height=180`;
@@ -430,9 +485,29 @@
     try {
       const res = await fetch(url);
       const text = await res.text();
-      const value = extractFeatureValue(text);
-      tagRoot.querySelector(".tag-value").textContent =
-        value !== null ? `${value} ${state.activeLayer.unit || ""}`.trim() : "no data here";
+      const raw = extractFeatureValue(text);
+      const valueEl = tagRoot.querySelector(".tag-value");
+
+      if (raw === null) {
+        valueEl.textContent = "no data here";
+        return;
+      }
+
+      const layer = state.activeLayer;
+      const converted = typeof raw === "number" && layer.convert ? layer.convert(raw) : raw;
+      const rounded = typeof converted === "number" ? Math.round(converted * 10) / 10 : converted;
+
+      const range = layer.kind && MEPS_CONFIG.SANITY_RANGES[layer.kind];
+      const implausible = range && typeof rounded === "number" && (rounded < range[0] || rounded > range[1]);
+
+      valueEl.textContent = `${rounded} ${layer.unit || ""}`.trim();
+      if (implausible) {
+        valueEl.textContent += " ⚠";
+        valueEl.title = "This reading is outside the physically expected range — " +
+          "likely a unit mismatch with the server rather than real weather. " +
+          "Raw server value was " + raw + (layer.rawUnit ? " " + layer.rawUnit : "") + ".";
+        valueEl.style.color = "#a35b00";
+      }
     } catch (err) {
       tagRoot.querySelector(".tag-value").textContent = "read failed";
     }
@@ -455,6 +530,60 @@
     }
     return null;
   }
+
+  // ---------------------------------------------------------------------
+  // Manual "download this run" — pulls the active field/time as NetCDF via
+  // THREDDS's NetCDF Subset Service (NCSS), which lives alongside the WMS
+  // service on the same dataset. THREDDS convention is that a WMS endpoint
+  // at .../thredds/wms/<path> has a sibling NCSS endpoint at
+  // .../thredds/ncss/grid/<path> — we derive it from wmsBase rather than
+  // hard-coding a second URL. If MET Norway's NCSS is laid out differently
+  // this will surface as a clear failed-download message, not silent data.
+  // ---------------------------------------------------------------------
+  const downloadBtn = document.getElementById("download-run-btn");
+  downloadBtn.addEventListener("click", async () => {
+    if (!state.activeLayer || !state.wmsBase) return;
+    const originalLabel = downloadBtn.textContent;
+    downloadBtn.textContent = "Fetching…";
+    downloadBtn.disabled = true;
+    try {
+      const ncssBase = state.wmsBase.replace("/wms/", "/ncss/grid/");
+      if (ncssBase === state.wmsBase) throw new Error("could not derive NCSS URL from this WMS base");
+
+      const timeVal = state.activeLayer.times[state.activeTimeIndex];
+      const params = new URLSearchParams({
+        var: state.activeLayer.name,
+        accept: "netcdf",
+      });
+      if (timeVal) {
+        params.set("time_start", timeVal);
+        params.set("time_end", timeVal);
+      }
+      const url = ncssBase + (ncssBase.includes("?") ? "&" : "?") + params.toString();
+
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const stamp = (timeVal || new Date().toISOString()).replace(/[:]/g, "");
+      a.href = objectUrl;
+      a.download = `meps_${state.activeLayer.name}_${stamp}.nc`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      alert(
+        "Couldn't download this field from THREDDS's NetCDF Subset Service: " + err.message +
+        "\n\nThis is a separate service from the WMS tiles (which are still working). " +
+        "See README.md → 'Automated model-run fetching' for the scheduled alternative."
+      );
+    } finally {
+      downloadBtn.textContent = originalLabel;
+      downloadBtn.disabled = false;
+    }
+  });
 
   // ---------------------------------------------------------------------
   // Source panel — manual endpoint override
