@@ -1,0 +1,37 @@
+name: Fetch latest MEPS run
+
+# MEPS updates several times a day (roughly every 3 hours). This runs a bit
+# more often than that so the archive doesn't lag too far behind, and can
+# also be triggered manually from the Actions tab.
+on:
+  schedule:
+    - cron: "15 */3 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch latest MEPS subset
+        run: python3 scripts/fetch_meps.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name "meps-viewer-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/meps_latest.nc data/meps_latest.meta.json
+          if git diff --cached --quiet; then
+            echo "No changes — MEPS hasn't published a new run yet, or fetch failed silently upstream."
+          else
+            git commit -m "data: refresh MEPS latest run [skip ci]"
+            git push
+          fi
