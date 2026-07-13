@@ -45,9 +45,17 @@
   <div class="deck-section">
     <h2 class="deck-title">Legend</h2>
     <div class="legend-card" id="legend-card">
+      <canvas id="legend-canvas" width="70" height="160"></canvas>
       <img id="legend-img" alt="Legend" />
       <div class="legend-empty" id="legend-empty">No layer selected</div>
     </div>
+    <p class="deck-note" id="legend-source-note"></p>
+  </div>
+
+  <div class="deck-section">
+    <h2 class="deck-title">Model run</h2>
+    <button class="source-btn" id="download-run-btn" style="width:100%">Download this field + run</button>
+    <p class="source-hint">Fetches the current field as NetCDF via MET Norway's subset service and saves it to your device.</p>
   </div>
 
   <div class="deck-section">
@@ -105,6 +113,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="config.js"></script>
+<script src="palettes.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
