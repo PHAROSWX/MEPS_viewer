@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>MEPS Viewer — MetCoOp Ensemble Prediction System</title>
+<meta name="description" content="Live viewer for the MEPS Nordic weather model — temperature, precipitation and wind fields straight from MET Norway.">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Top HUD strip -->
+<header class="hud">
+  <div class="hud-left">
+    <span class="hud-mark">MEPS</span>
+    <span class="hud-sub">MetCoOp Ensemble Prediction System</span>
+  </div>
+  <div class="hud-right">
+    <div class="hud-clock" id="run-clock">
+      <span class="clock-label">MODEL RUN</span>
+      <span class="clock-value" id="run-time">— — —</span>
+      <span class="clock-age" id="run-age">age unknown</span>
+    </div>
+    <button class="hud-btn" id="about-btn" aria-label="About this viewer">?</button>
+    <button class="hud-btn" id="deck-toggle" aria-label="Toggle layer deck">☰</button>
+  </div>
+</header>
+
+<!-- Right control deck -->
+<aside class="deck" id="deck">
+  <div class="deck-section">
+    <h2 class="deck-title">Field</h2>
+    <div class="field-list" id="field-list">
+      <p class="deck-note">Loading capabilities…</p>
+    </div>
+  </div>
+
+  <div class="deck-section">
+    <h2 class="deck-title">Legend</h2>
+    <div class="legend-card" id="legend-card">
+      <img id="legend-img" alt="Legend" />
+      <div class="legend-empty" id="legend-empty">No layer selected</div>
+    </div>
+  </div>
+
+  <div class="deck-section">
+    <h2 class="deck-title">Source</h2>
+    <div class="source-box">
+      <label class="source-label" for="wms-url">WMS GetCapabilities URL</label>
+      <input type="text" id="wms-url" class="source-input" spellcheck="false" />
+      <div class="source-row">
+        <button class="source-btn" id="wms-reload">Reload</button>
+        <span class="source-status" id="wms-status">—</span>
+      </div>
+      <p class="source-hint">If MET Norway has moved the endpoint, paste the current one here. See README for known alternates.</p>
+    </div>
+  </div>
+</aside>
+
+<!-- Bottom timeline scrubber -->
+<footer class="tape">
+  <button class="tape-btn" id="tape-play" aria-label="Play forecast animation">▶</button>
+  <div class="tape-track-wrap">
+    <input type="range" id="tape-slider" class="tape-slider" min="0" max="0" value="0" step="1" />
+    <div class="tape-ticks" id="tape-ticks"></div>
+  </div>
+  <div class="tape-readout">
+    <span class="tape-label">VALID</span>
+    <span class="tape-value" id="valid-time">—</span>
+    <span class="tape-lead" id="lead-time">+00h</span>
+  </div>
+</footer>
+
+<!-- Station tag template (cloned via JS on map click) -->
+<template id="station-tag-template">
+  <div class="station-tag">
+    <div class="tag-row tag-title"></div>
+    <div class="tag-row tag-value"></div>
+    <div class="tag-row tag-coord"></div>
+    <div class="tag-row tag-time"></div>
+  </div>
+</template>
+
+<!-- About panel -->
+<div class="about-veil" id="about-veil">
+  <div class="about-card">
+    <button class="about-close" id="about-close" aria-label="Close">×</button>
+    <h2>About MEPS</h2>
+    <p>MEPS — the <strong>MetCoOp Ensemble Prediction System</strong> — is a 2.5&nbsp;km convection-permitting
+    weather model run jointly by the meteorological institutes of Norway, Sweden, Finland and Estonia
+    (MetCoOp). It updates several times a day and is the primary short-range forecast model for the Nordics.</p>
+    <p>This viewer pulls live gridded fields directly from MET Norway's public THREDDS / WMS data service —
+    nothing is pre-rendered or cached on this site. Click anywhere on the map to read the decoded value
+    at that point, styled as a station tag in the classic synoptic-chart tradition.</p>
+    <p class="about-credit">Data: MET Norway (thredds.met.no), CC BY 4.0. Not an official MET Norway product.</p>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
