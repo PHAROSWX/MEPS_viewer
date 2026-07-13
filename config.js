@@ -25,6 +25,11 @@ const MEPS_CONFIG = {
 
   // Preferred variables to surface first if present in GetCapabilities, in this order.
   // Matching is done against WMS layer Name/Title (case-insensitive substring match).
+  // `unit` here is a DISPLAY DEFAULT ONLY — app.js overrides it with whatever
+  // unit the server actually reports (via ncWMS layerDetails) whenever it can,
+  // and applies the CF_UNIT_CONVERSIONS below to turn raw server units (Pa, K)
+  // into human-friendly ones (hPa, °C). Don't rely on this field being correct
+  // on its own.
   PREFERRED_FIELDS: [
     { match: ["air_temperature_2m", "temperature"], label: "Temperature · 2m", unit: "°C", kind: "temperature" },
     { match: ["precipitation_amount_acc", "precipitation_amount", "precipitation"], label: "Precipitation", unit: "mm", kind: "precip" },
@@ -32,7 +37,33 @@ const MEPS_CONFIG = {
     { match: ["cloud_area_fraction", "cloud"], label: "Cloud cover", unit: "%", kind: "cloud" },
     { match: ["air_pressure_at_sea_level", "surface_air_pressure", "pressure"], label: "Mean sea level pressure", unit: "hPa", kind: "pressure" },
     { match: ["relative_humidity"], label: "Relative humidity · 2m", unit: "%", kind: "humidity" },
+    { match: ["specific_convective_available_potential_energy", "cape"], label: "CAPE", unit: "J/kg", kind: "cape" },
+    { match: ["snowfall_amount", "lwe_snowfall", "snow"], label: "Snow", unit: "mm", kind: "snow" },
   ],
+
+  // Well-known CF unit conversions, applied automatically when the server
+  // reports one of these source units. This is what fixes the "102309.2 hPa"
+  // (actually Pa) and equivalent Kelvin-vs-Celsius bugs.
+  CF_UNIT_CONVERSIONS: {
+    Pa:  { to: "hPa", fn: (v) => v / 100 },
+    K:   { to: "°C",  fn: (v) => v - 273.15 },
+    "1": { to: "%",   fn: (v) => v * 100 },   // fractions (e.g. cloud_area_fraction 0-1)
+  },
+
+  // Rough physical plausibility ranges per field "kind", used only to flag
+  // (not hide) a GetFeatureInfo reading that looks wrong — e.g. a unit or
+  // layer mismatch on the server side — rather than presenting it silently
+  // as fact.
+  SANITY_RANGES: {
+    temperature: [-90, 60],   // °C
+    pressure: [850, 1100],    // hPa
+    wind: [0, 120],           // m/s
+    humidity: [0, 100],       // %
+    cloud: [0, 100],          // %
+    cape: [0, 8000],          // J/kg
+    precip: [0, 500],         // mm
+    snow: [-90, 60],
+  },
 
   MAP_CENTER: [64.5, 17.0], // roughly the geographic middle of the MEPS domain (Norway/Sweden/Finland)
   MAP_ZOOM: 5,
