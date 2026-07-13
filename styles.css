@@ -212,6 +212,7 @@ html, body {
   justify-content: center;
 }
 .legend-card img { max-width: 100%; display: block; }
+.legend-card canvas { display: none; }
 .legend-empty {
   font-family: var(--font-mono);
   font-size: 11px;
