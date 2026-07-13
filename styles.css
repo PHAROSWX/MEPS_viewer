@@ -1,0 +1,456 @@
+/* ---------------------------------------------------------------------------
+   MEPS Viewer — design tokens
+   Concept: a synoptic instrument panel, not a SaaS dashboard. Deep night-sky
+   navy, a single aurora-green "live" accent, chart-paper cream for anything
+   that reads like decoded data (legends, station tags, timestamps).
+--------------------------------------------------------------------------- */
+:root {
+  --bg-void: #0a0f1a;
+  --bg-panel: #121b2e;
+  --bg-panel-2: #0e1526;
+  --panel-border: #24344f;
+  --paper: #e9e4d4;
+  --paper-ink: #1b2430;
+  --text-primary: #e7ecf2;
+  --text-muted: #7c8ca6;
+  --accent-aurora: #6ee7b7;
+  --accent-amber: #f2a65a;
+  --accent-frost: #7dd3fc;
+  --grid-line: #1c2a42;
+
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-body: 'Inter', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  overflow: hidden;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-void);
+}
+
+/* Leaflet dark-map tuning */
+.leaflet-tile-pane { filter: saturate(0.9) brightness(0.95); }
+.leaflet-control-attribution {
+  background: rgba(10, 15, 26, 0.75) !important;
+  color: var(--text-muted) !important;
+  font-family: var(--font-mono);
+  font-size: 10px !important;
+}
+.leaflet-control-attribution a { color: var(--accent-frost) !important; }
+
+/* -------------------------------------------------------------------------
+   HUD strip (top)
+------------------------------------------------------------------------- */
+.hud {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 1000;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: linear-gradient(180deg, rgba(10,15,26,0.95), rgba(10,15,26,0.75));
+  border-bottom: 1px solid var(--grid-line);
+  backdrop-filter: blur(6px);
+}
+
+.hud-left { display: flex; align-items: baseline; gap: 10px; }
+.hud-mark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+}
+.hud-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  display: none;
+}
+@media (min-width: 640px) {
+  .hud-sub { display: inline; }
+}
+
+.hud-right { display: flex; align-items: center; gap: 12px; }
+
+.hud-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+  padding-right: 4px;
+  border-right: 1px solid var(--grid-line);
+  margin-right: 4px;
+}
+.clock-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+.clock-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--accent-frost);
+}
+.clock-age {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent-aurora);
+}
+
+.hud-btn {
+  width: 32px; height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.hud-btn:hover { border-color: var(--accent-frost); background: var(--bg-panel-2); }
+
+/* -------------------------------------------------------------------------
+   Right control deck
+------------------------------------------------------------------------- */
+.deck {
+  position: absolute;
+  top: 72px;
+  right: 16px;
+  width: 280px;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  z-index: 999;
+  background: rgba(18, 27, 46, 0.92);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.deck.collapsed {
+  transform: translateX(320px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.deck-section {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--grid-line);
+}
+.deck-section:last-child { border-bottom: none; }
+
+.deck-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 10px 0;
+}
+
+.deck-note {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.field-list { display: flex; flex-direction: column; gap: 6px; }
+
+.field-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--panel-border);
+  background: var(--bg-panel-2);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.field-btn:hover { border-color: var(--accent-frost); }
+.field-btn.active {
+  border-color: var(--accent-aurora);
+  background: rgba(110, 231, 183, 0.08);
+}
+.field-btn .unit {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.field-btn.active .unit { color: var(--accent-aurora); }
+
+.legend-card {
+  background: var(--paper);
+  border-radius: 6px;
+  padding: 10px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.legend-card img { max-width: 100%; display: block; }
+.legend-empty {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--paper-ink);
+  opacity: 0.5;
+}
+
+.source-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.source-input {
+  width: 100%;
+  background: var(--bg-void);
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  color: var(--accent-frost);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 7px 8px;
+}
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.source-btn {
+  padding: 6px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--panel-border);
+  background: var(--bg-panel-2);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+.source-btn:hover { border-color: var(--accent-aurora); }
+.source-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.source-hint {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  margin: 8px 0 0 0;
+}
+
+/* -------------------------------------------------------------------------
+   Bottom timeline tape
+------------------------------------------------------------------------- */
+.tape {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  z-index: 1000;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: linear-gradient(0deg, rgba(10,15,26,0.95), rgba(10,15,26,0.75));
+  border-top: 1px solid var(--grid-line);
+  backdrop-filter: blur(6px);
+}
+
+.tape-btn {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-aurora);
+  background: rgba(110, 231, 183, 0.08);
+  color: var(--accent-aurora);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.tape-track-wrap { flex: 1; position: relative; padding-top: 10px; }
+.tape-slider {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  background: var(--grid-line);
+  border-radius: 2px;
+  outline: none;
+}
+.tape-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--accent-aurora);
+  border: 2px solid var(--bg-void);
+  cursor: pointer;
+  margin-top: -6px;
+}
+.tape-slider::-moz-range-thumb {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--accent-aurora);
+  border: 2px solid var(--bg-void);
+  cursor: pointer;
+}
+.tape-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  pointer-events: none;
+}
+
+.tape-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+  min-width: 110px;
+}
+.tape-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+.tape-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.tape-lead {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-amber);
+}
+
+/* -------------------------------------------------------------------------
+   Station tag — the signature element. Styled like a punch-card / METAR
+   ticket pinned to the map at the clicked point.
+------------------------------------------------------------------------- */
+.leaflet-popup-content-wrapper {
+  background: var(--paper);
+  color: var(--paper-ink);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+}
+.leaflet-popup-tip { background: var(--paper); }
+.leaflet-popup-content { margin: 0; }
+.leaflet-popup-close-button {
+  color: var(--paper-ink) !important;
+}
+
+.station-tag {
+  font-family: var(--font-mono);
+  padding: 10px 12px;
+  min-width: 150px;
+}
+.tag-row { line-height: 1.5; }
+.tag-title {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--paper-ink);
+  opacity: 0.6;
+  border-bottom: 1px dashed rgba(27,36,48,0.3);
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+}
+.tag-value {
+  font-size: 18px;
+  font-weight: 600;
+}
+.tag-coord, .tag-time {
+  font-size: 10px;
+  opacity: 0.65;
+}
+
+/* -------------------------------------------------------------------------
+   About modal
+------------------------------------------------------------------------- */
+.about-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(10,15,26,0.7);
+  backdrop-filter: blur(3px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.about-veil.visible { display: flex; }
+
+.about-card {
+  position: relative;
+  max-width: 480px;
+  background: var(--bg-panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 28px 26px;
+}
+.about-card h2 {
+  font-family: var(--font-display);
+  margin-top: 0;
+  color: var(--accent-aurora);
+}
+.about-card p {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+.about-credit {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.about-close {
+  position: absolute;
+  top: 14px; right: 14px;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+/* -------------------------------------------------------------------------
+   Responsive
+------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .deck { width: calc(100% - 32px); top: 64px; max-height: calc(100vh - 200px); }
+  .tape { flex-wrap: nowrap; }
+  .tape-readout { min-width: 84px; }
+  .hud { padding: 0 10px; }
+}
