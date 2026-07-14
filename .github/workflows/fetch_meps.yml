@@ -36,11 +36,24 @@ jobs:
           MEPS_BBOX: ${{ github.event.inputs.bbox }}
         run: python3 scripts/fetch_meps.py
 
+      - name: Sanity-check output size before committing
+        run: |
+          for f in data/meps_latest.grib2 data/meps_latest.nc; do
+            if [ -f "$f" ]; then
+              size=$(stat -c%s "$f")
+              echo "$f is $size bytes"
+              if [ "$size" -gt 94371840 ]; then  # 90 MiB
+                echo "::error::$f is over 90 MiB — GitHub's hard limit is 100 MB. Refusing to commit."
+                exit 1
+              fi
+            fi
+          done
+
       - name: Commit if changed
         run: |
           git config user.name "meps-viewer-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/meps_latest.nc data/meps_latest.meta.json
+          git add -A -- data/
           if git diff --cached --quiet; then
             echo "No changes — MEPS hasn't published a new run yet, or fetch failed silently upstream."
           else
