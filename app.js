@@ -39,6 +39,42 @@
   }).addTo(map);
 
   // ---------------------------------------------------------------------
+  // Country borders — drawn in their own pane above the WMS raster layer
+  // (which the CARTO basemap's own borders would otherwise be hidden
+  // under), so they stay crisp regardless of which field/opacity is
+  // active. Sourced from Natural Earth's public 50m admin-0 boundaries via
+  // jsDelivr's GitHub CDN mirror, which serves CORS-friendly static files —
+  // no backend or API key needed, consistent with the rest of this site.
+  // ---------------------------------------------------------------------
+  const bordersPane = map.createPane("borders");
+  bordersPane.style.zIndex = 450; // above tile panes (200s) and the WMS overlay pane (400s), below markers/popups
+  bordersPane.style.pointerEvents = "none";
+
+  const BORDERS_GEOJSON_URL =
+    "https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector/geojson/ne_50m_admin_0_countries.geojson";
+
+  fetch(BORDERS_GEOJSON_URL)
+    .then((res) => {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    })
+    .then((geojson) => {
+      L.geoJSON(geojson, {
+        pane: "borders",
+        interactive: false,
+        style: {
+          color: "rgba(231, 236, 242, 0.55)",
+          weight: 1,
+          fill: false,
+        },
+      }).addTo(map);
+    })
+    .catch((err) => {
+      // Non-fatal — the map still works without borders, just less legible.
+      console.warn("Could not load country borders overlay:", err.message);
+    });
+
+  // ---------------------------------------------------------------------
   // DOM refs
   // ---------------------------------------------------------------------
   const el = {
