@@ -33,12 +33,13 @@ const MEPS_CONFIG = {
   PREFERRED_FIELDS: [
     { match: ["air_temperature_2m", "temperature"], label: "Temperature · 2m", unit: "°C", kind: "temperature" },
     { match: ["precipitation_amount_acc", "precipitation_amount", "precipitation"], label: "Precipitation", unit: "mm", kind: "precip" },
+    { match: ["wind_speed_of_gust", "wind_gust"], label: "Wind gusts · 1h", unit: "m/s", kind: "wind" },
     { match: ["wind_speed", "x_wind", "wind"], label: "Wind speed · 10m", unit: "m/s", kind: "wind" },
     { match: ["cloud_area_fraction", "cloud"], label: "Cloud cover", unit: "%", kind: "cloud" },
     { match: ["air_pressure_at_sea_level", "surface_air_pressure", "pressure"], label: "Mean sea level pressure", unit: "hPa", kind: "pressure" },
     { match: ["relative_humidity"], label: "Relative humidity · 2m", unit: "%", kind: "humidity" },
     { match: ["specific_convective_available_potential_energy", "cape"], label: "CAPE", unit: "J/kg", kind: "cape" },
-    { match: ["snowfall_amount", "lwe_snowfall", "snow"], label: "Snow", unit: "mm", kind: "snow" },
+    { match: ["snowfall_amount", "lwe_snowfall", "snow"], label: "Snow depth", unit: "cm", kind: "snow" },
   ],
 
   // Well-known CF unit conversions, applied automatically when the server
@@ -62,7 +63,7 @@ const MEPS_CONFIG = {
     cloud: [0, 100],          // %
     cape: [0, 8000],          // J/kg
     precip: [0, 500],         // mm
-    snow: [-90, 60],
+    snow: [0, 600],            // cm — real snow-depth range now that the palette is fixed
   },
 
   MAP_CENTER: [64.5, 17.0], // roughly the geographic middle of the MEPS domain (Norway/Sweden/Finland)
