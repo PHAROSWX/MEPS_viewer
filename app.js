@@ -59,20 +59,136 @@
       return res.json();
     })
     .then((geojson) => {
+      // A dark, wider "halo" line underneath a thinner bright line keeps
+      // borders legible over any raster color (bright fields would wash out
+      // a plain light-grey line on its own).
       L.geoJSON(geojson, {
         pane: "borders",
         interactive: false,
-        style: {
-          color: "rgba(231, 236, 242, 0.55)",
-          weight: 1,
-          fill: false,
-        },
+        style: { color: "rgba(0, 0, 0, 0.55)", weight: 2.4, fill: false },
+      }).addTo(map);
+      L.geoJSON(geojson, {
+        pane: "borders",
+        interactive: false,
+        style: { color: "rgba(255, 255, 255, 0.85)", weight: 1, fill: false },
       }).addTo(map);
     })
     .catch((err) => {
       // Non-fatal — the map still works without borders, just less legible.
       console.warn("Could not load country borders overlay:", err.message);
     });
+
+  // ---------------------------------------------------------------------
+  // Client-side grid render (gridrender.js) — draws the active field using
+  // OUR OWN palettes.js colors + contour lines, sourced from FMI's open
+  // data (see gridrender.js header for the full explanation). Sits above
+  // the WMS tile layer and below borders; if it fails for any reason the
+  // WMS layer underneath is simply left visible, unchanged.
+  // ---------------------------------------------------------------------
+  const gridPane = map.createPane("gridrender");
+  gridPane.style.zIndex = 420;
+  gridPane.style.pointerEvents = "none";
+
+  const fillCanvas = document.createElement("canvas");
+  const contourCanvas = document.createElement("canvas");
+  for (const c of [fillCanvas, contourCanvas]) {
+    c.style.position = "absolute";
+    c.style.top = "0";
+    c.style.left = "0";
+    gridPane.appendChild(c);
+  }
+
+  let renderRequestId = 0;
+  let renderDebounceTimer = null;
+
+  function clearGridRender() {
+    const fctx = fillCanvas.getContext("2d");
+    const cctx = contourCanvas.getContext("2d");
+    fctx.clearRect(0, 0, fillCanvas.width, fillCanvas.height);
+    cctx.clearRect(0, 0, contourCanvas.width, contourCanvas.height);
+  }
+
+  function setRenderStatus(text, colorVar) {
+    const note = document.getElementById("render-status-note");
+    if (!note) return;
+    note.textContent = text;
+    note.style.color = colorVar ? `var(${colorVar})` : "";
+  }
+
+  async function attemptClientRender() {
+    const field = state.activeLayer;
+    const myId = ++renderRequestId;
+
+    if (!field || !field.kind || !window.GridRender || !window.GridRender.isSupported(field.kind)) {
+      clearGridRender();
+      setRenderStatus("");
+      return;
+    }
+
+    const timeVal = field.times[state.activeTimeIndex];
+    if (!timeVal) {
+      clearGridRender();
+      return;
+    }
+
+    setRenderStatus("Custom render: loading…", "--text-muted");
+
+    const bounds = map.getBounds();
+    // Small pad so the fetched area covers slightly beyond the visible
+    // viewport, avoiding a hard transparent edge right at the map border.
+    const pad = 0.15;
+    const bbox = [
+      bounds.getWest() - pad, bounds.getSouth() - pad,
+      bounds.getEast() + pad, bounds.getNorth() + pad,
+    ];
+
+    try {
+      const grid = await window.GridRender.loadFieldGrid(field.kind, bbox, timeVal);
+      if (myId !== renderRequestId) return; // superseded by a newer request
+
+      const size = map.getSize();
+      for (const c of [fillCanvas, contourCanvas]) {
+        c.style.width = size.x + "px";
+        c.style.height = size.y + "px";
+      }
+
+      const containerPointToLatLng = (px, py) => map.containerPointToLatLng([px, py]);
+      window.GridRender.renderFill(fillCanvas, grid, containerPointToLatLng, size.x, size.y);
+
+      contourCanvas.width = size.x;
+      contourCanvas.height = size.y;
+      const latLngToContainerPoint = (lat, lon) => map.latLngToContainerPoint([lat, lon]);
+      const palette = METAR_PALETTES[grid.palette];
+      const levels = palette ? palette.stops.map((s) => s[0]) : [];
+      window.GridRender.renderContours(contourCanvas, grid, latLngToContainerPoint, levels);
+
+      if (myId !== renderRequestId) return;
+      // Client render succeeded — dim the WMS layer underneath rather than
+      // removing it outright, so a partial/edge-of-bbox gap in our canvas
+      // still shows *something* instead of a hard transparent hole.
+      if (state.wmsLayerObj) state.wmsLayerObj.setOpacity(0.15);
+      setRenderStatus("Custom render: active (FMI + your palettes)", "--accent-aurora");
+    } catch (err) {
+      if (myId !== renderRequestId) return;
+      console.warn("Client-side grid render failed, falling back to WMS:", err.message);
+      clearGridRender();
+      if (state.wmsLayerObj) state.wmsLayerObj.setOpacity(0.75);
+      setRenderStatus("Custom render unavailable — showing MET Norway's WMS instead", "--accent-amber");
+    }
+  }
+
+  function scheduleClientRender() {
+    clearTimeout(renderDebounceTimer);
+    renderDebounceTimer = setTimeout(attemptClientRender, 400);
+  }
+
+  map.on("moveend zoomend resize", () => {
+    if (state.activeLayer && state.activeLayer.kind && window.GridRender && window.GridRender.isSupported(state.activeLayer.kind)) {
+      scheduleClientRender();
+    }
+  });
+
+  window.addEventListener("resize", () => map.invalidateSize());
 
   // ---------------------------------------------------------------------
   // DOM refs
@@ -96,7 +212,6 @@
     aboutBtn: document.getElementById("about-btn"),
     aboutClose: document.getElementById("about-close"),
     aboutVeil: document.getElementById("about-veil"),
-    stationTagTpl: document.getElementById("station-tag-template"),
   };
 
   // ---------------------------------------------------------------------
@@ -178,13 +293,22 @@
       const title = titleNode ? titleNode.textContent.trim() : name;
 
       let times = [];
-      const dimNode = Array.from(node.getElementsByTagName("Dimension")).find(
-        (d) => (d.getAttribute("name") || "").toLowerCase() === "time"
-      );
-      if (dimNode && dimNode.textContent.trim()) {
-        times = parseTimeDimension(dimNode.textContent.trim());
+      const extraDims = {}; // e.g. { elevation: "0", depth: "2" } — dimensions other than time
+      const dimNodes = Array.from(node.getElementsByTagName("Dimension"));
+      for (const d of dimNodes) {
+        const dimName = (d.getAttribute("name") || "").toLowerCase();
+        if (dimName === "time") {
+          if (d.textContent.trim()) times = parseTimeDimension(d.textContent.trim());
+        } else if (dimName && dimName !== "reference_time") {
+          // Take the server's declared default if present, else the first
+          // listed value — some WMS servers 400/return blank tiles if a
+          // non-time dimension a layer declares isn't supplied at all.
+          const def = d.getAttribute("default");
+          const first = d.textContent.trim().split(",")[0].trim();
+          extraDims[dimName] = def || first || undefined;
+        }
       }
-      out.push({ name, title, times });
+      out.push({ name, title, times, extraDims });
     }
     return out;
   }
@@ -228,10 +352,22 @@
   function buildFieldList() {
     el.fieldList.innerHTML = "";
 
+    // Layers whose name/title suggest they're a derived probability or
+    // threshold-exceedance product, not the raw physical quantity — e.g. a
+    // "probability of CAPE > 500 J/kg" layer can otherwise get matched by a
+    // loose "cape" substring search and silently replace the real CAPE
+    // field. Filtered out before matching, for every field, not just CAPE,
+    // since "probability of precipitation" could equally hijack "precip".
+    const isDerivedProduct = (l) => {
+      const hay = (l.name + " " + l.title).toLowerCase();
+      return hay.includes("probability") || hay.includes("percentile") || hay.includes("exceedance");
+    };
+    const candidateLayers = state.layers.filter((l) => !isDerivedProduct(l));
+
     const matched = [];
     const used = new Set();
     for (const pref of MEPS_CONFIG.PREFERRED_FIELDS) {
-      const found = state.layers.find((l) => {
+      const found = candidateLayers.find((l) => {
         const hay = (l.name + " " + l.title).toLowerCase();
         return pref.match.some((m) => hay.includes(m.toLowerCase()));
       });
@@ -241,6 +377,8 @@
       }
     }
     // Add any remaining layers (capped) so nothing discoverable is hidden.
+    // Derived/probability products are still listed here (just not
+    // auto-selected as the "real" field) so they're not hidden entirely.
     const rest = state.layers.filter((l) => !used.has(l.name)).slice(0, 12);
     for (const r of rest) matched.push({ ...r, label: r.title, unit: "", kind: null, convert: (v) => v });
 
@@ -283,6 +421,8 @@
     updateLegend(field);
     updateRunClock(field);
     await resolveServerUnits(field); // may correct field.unit once the server responds
+    clearGridRender();
+    scheduleClientRender();
   }
 
   // ---------------------------------------------------------------------
@@ -302,9 +442,18 @@
       const rawUnit = data && (data.units || data.unit);
       if (rawUnit && field === state.activeLayer) {
         field.rawUnit = rawUnit;
-        const conv = MEPS_CONFIG.CF_UNIT_CONVERSIONS[rawUnit];
-        field.unit = conv ? conv.to : rawUnit;
-        field.convert = conv ? conv.fn : (v) => v;
+        // Kind-scoped overrides take priority over the global CF table —
+        // "m" means very different things for snow depth vs. e.g.
+        // geopotential height, so this conversion is deliberately scoped to
+        // kind === "snow" rather than added to CF_UNIT_CONVERSIONS globally.
+        if (field.kind === "snow" && rawUnit === "m") {
+          field.unit = "cm";
+          field.convert = (v) => v * 100;
+        } else {
+          const conv = MEPS_CONFIG.CF_UNIT_CONVERSIONS[rawUnit];
+          field.unit = conv ? conv.to : rawUnit;
+          field.convert = conv ? conv.fn : (v) => v;
+        }
         // Refresh anything already showing the old unit guess.
         const btn = [...document.querySelectorAll(".field-btn")].find((b) => b.classList.contains("active"));
         if (btn) {
@@ -361,6 +510,7 @@
     if (state.activeLayer) {
       updateTimeReadout(state.activeLayer);
       updateWmsLayer();
+      scheduleClientRender();
     }
   });
 
@@ -378,6 +528,7 @@
       el.tapeSlider.value = state.activeTimeIndex;
       updateTimeReadout(state.activeLayer);
       updateWmsLayer();
+      scheduleClientRender();
     }, 900);
   });
 
@@ -400,11 +551,24 @@
       attribution: "MET Norway",
     };
     if (timeVal) wmsOpts.time = timeVal;
+    // Some WMS servers 400 or silently return blank tiles if a layer
+    // declares a non-time dimension (e.g. "elevation") and it isn't
+    // supplied at all — MSLP failing to render at all, while other fields
+    // worked, pointed at exactly this. Forward whatever default we parsed
+    // from GetCapabilities for each such dimension.
+    if (state.activeLayer.extraDims) {
+      for (const [dim, val] of Object.entries(state.activeLayer.extraDims)) {
+        if (val !== undefined) wmsOpts[dim] = val;
+      }
+    }
 
     state.wmsLayerObj = L.tileLayer.wms(state.wmsBase, wmsOpts);
-    state.wmsLayerObj.on("tileerror", () => {
+    state.wmsLayerObj.on("tileerror", (err) => {
       el.wmsStatus.textContent = "tile error (layer/time may be unsupported)";
       el.wmsStatus.style.color = "var(--accent-amber)";
+      // Logged (not just silently flagged) so a failure can actually be
+      // diagnosed from devtools instead of guessed at blind.
+      console.warn("WMS tile failed:", err && err.tile && err.tile.src, err);
     });
     state.wmsLayerObj.addTo(map);
   }
@@ -475,79 +639,129 @@
   }
 
   // ---------------------------------------------------------------------
-  // Station tag — click-to-read GetFeatureInfo, the signature interaction.
+  // Cursor tag — hover-to-read GetFeatureInfo, updating continuously as the
+  // mouse moves rather than requiring a click. Throttled so it doesn't fire
+  // a request per pixel of movement, and race-safe (a slow response for an
+  // old position can't clobber a newer one) via a monotonically increasing
+  // request id.
   // ---------------------------------------------------------------------
-  map.on("click", async (e) => {
-    if (!state.activeLayer || !state.wmsBase) return;
+  const HOVER_THROTTLE_MS = 120;
+  let hoverLastFired = 0;
+  let hoverPendingTimer = null;
+  let hoverRequestId = 0;
 
+  const cursorTag = document.getElementById("cursor-tag");
+  const cursorTagTitle = document.getElementById("cursor-tag-title");
+  const cursorTagValue = document.getElementById("cursor-tag-value");
+  const cursorTagCoord = document.getElementById("cursor-tag-coord");
+  const cursorTagTime = document.getElementById("cursor-tag-time");
+
+  function positionCursorTag(clientX, clientY) {
+    const offset = 16;
+    const rect = cursorTag.getBoundingClientRect();
+    let left = clientX + offset;
+    let top = clientY + offset;
+    if (left + rect.width > window.innerWidth) left = clientX - rect.width - offset;
+    if (top + rect.height > window.innerHeight) top = clientY - rect.height - offset;
+    cursorTag.style.left = `${left}px`;
+    cursorTag.style.top = `${top}px`;
+  }
+
+  map.getContainer().addEventListener("mousemove", (domEvent) => {
+    if (!state.activeLayer || !state.wmsBase) return;
+    const now = performance.now();
+    positionCursorTag(domEvent.clientX, domEvent.clientY);
+
+    if (now - hoverLastFired < HOVER_THROTTLE_MS) {
+      clearTimeout(hoverPendingTimer);
+      hoverPendingTimer = setTimeout(() => queryAtPoint(domEvent), HOVER_THROTTLE_MS);
+      return;
+    }
+    hoverLastFired = now;
+    queryAtPoint(domEvent);
+  });
+
+  map.getContainer().addEventListener("mouseleave", () => {
+    cursorTag.classList.add("hidden");
+  });
+
+  async function queryAtPoint(domEvent) {
+    const layer = state.activeLayer;
+    if (!layer || !state.wmsBase) return;
+
+    const containerPoint = map.mouseEventToContainerPoint(domEvent);
+    const latlng = map.containerPointToLatLng(containerPoint);
     const size = map.getSize();
     const bounds = map.getBounds();
     const sw = L.CRS.EPSG3857.project(bounds.getSouthWest());
     const ne = L.CRS.EPSG3857.project(bounds.getNorthEast());
-    const timeVal = state.activeLayer.times[state.activeTimeIndex];
+    const timeVal = layer.times[state.activeTimeIndex];
 
     const params = new URLSearchParams({
       service: "WMS",
       version: "1.3.0",
       request: "GetFeatureInfo",
-      layers: state.activeLayer.name,
-      query_layers: state.activeLayer.name,
+      layers: layer.name,
+      query_layers: layer.name,
       crs: "EPSG:3857",
       bbox: `${sw.x},${sw.y},${ne.x},${ne.y}`,
       width: size.x,
       height: size.y,
-      i: Math.round(e.containerPoint.x),
-      j: Math.round(e.containerPoint.y),
+      i: Math.round(containerPoint.x),
+      j: Math.round(containerPoint.y),
       info_format: "text/xml",
       feature_count: "1",
     });
     if (timeVal) params.set("time", timeVal);
+    if (layer.extraDims) {
+      for (const [dim, val] of Object.entries(layer.extraDims)) {
+        if (val !== undefined) params.set(dim, val);
+      }
+    }
 
     const url = state.wmsBase + (state.wmsBase.includes("?") ? "&" : "?") + params.toString();
 
-    const tagFrag = el.stationTagTpl.content.cloneNode(true);
-    const tagRoot = tagFrag.querySelector(".station-tag");
-    tagFrag.querySelector(".tag-title").textContent = state.activeLayer.label || state.activeLayer.name;
-    tagFrag.querySelector(".tag-value").textContent = "reading…";
-    tagFrag.querySelector(".tag-coord").textContent =
-      `${e.latlng.lat.toFixed(2)}°N, ${e.latlng.lng.toFixed(2)}°E`;
-    tagFrag.querySelector(".tag-time").textContent = timeVal ? formatValidLabel(timeVal) : "";
+    cursorTag.classList.remove("hidden");
+    cursorTagTitle.textContent = layer.label || layer.name;
+    cursorTagCoord.textContent = `${latlng.lat.toFixed(2)}°N, ${latlng.lng.toFixed(2)}°E`;
+    cursorTagTime.textContent = timeVal ? formatValidLabel(timeVal) : "";
 
-    const popup = L.popup({ closeButton: true, className: "" })
-      .setLatLng(e.latlng)
-      .setContent(tagRoot)
-      .openOn(map);
-
+    const myRequestId = ++hoverRequestId;
     try {
       const res = await fetch(url);
       const text = await res.text();
-      const raw = extractFeatureValue(text);
-      const valueEl = tagRoot.querySelector(".tag-value");
+      if (myRequestId !== hoverRequestId) return; // a newer hover position already superseded this
 
+      const raw = extractFeatureValue(text);
       if (raw === null) {
-        valueEl.textContent = "no data here";
+        cursorTagValue.textContent = "no data here";
+        cursorTagValue.style.color = "";
+        cursorTagValue.title = "";
         return;
       }
 
-      const layer = state.activeLayer;
       const converted = typeof raw === "number" && layer.convert ? layer.convert(raw) : raw;
       const rounded = typeof converted === "number" ? Math.round(converted * 10) / 10 : converted;
 
       const range = layer.kind && MEPS_CONFIG.SANITY_RANGES[layer.kind];
       const implausible = range && typeof rounded === "number" && (rounded < range[0] || rounded > range[1]);
 
-      valueEl.textContent = `${rounded} ${layer.unit || ""}`.trim();
+      cursorTagValue.textContent = `${rounded} ${layer.unit || ""}`.trim();
       if (implausible) {
-        valueEl.textContent += " ⚠";
-        valueEl.title = "This reading is outside the physically expected range — " +
+        cursorTagValue.textContent += " ⚠";
+        cursorTagValue.title = "This reading is outside the physically expected range — " +
           "likely a unit mismatch with the server rather than real weather. " +
           "Raw server value was " + raw + (layer.rawUnit ? " " + layer.rawUnit : "") + ".";
-        valueEl.style.color = "#a35b00";
+        cursorTagValue.style.color = "#a35b00";
+      } else {
+        cursorTagValue.style.color = "";
+        cursorTagValue.title = "";
       }
     } catch (err) {
-      tagRoot.querySelector(".tag-value").textContent = "read failed";
+      if (myRequestId !== hoverRequestId) return;
+      cursorTagValue.textContent = "read failed";
     }
-  });
+  }
 
   function formatValidLabel(iso) {
     return new Date(iso).toISOString().slice(0, 16).replace("T", " ") + "Z";
@@ -561,7 +775,13 @@
       const m = re.exec(xmlText);
       if (m) {
         const num = parseFloat(m[1]);
-        return isNaN(num) ? m[1].trim() : Math.round(num * 10) / 10;
+        if (isNaN(num)) return m[1].trim();
+        // netCDF's classic float32 _FillValue sentinel (≈9.96921e+36) marks
+        // "no data" — e.g. a precipitation-accumulation field genuinely has
+        // no value at forecast hour 0. Treat it (and its negative form) as
+        // missing rather than displaying a nonsense reading.
+        if (Math.abs(num) > 1e30) return null;
+        return Math.round(num * 10) / 10;
       }
     }
     return null;
