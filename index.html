@@ -50,6 +50,7 @@
       <div class="legend-empty" id="legend-empty">No layer selected</div>
     </div>
     <p class="deck-note" id="legend-source-note"></p>
+    <p class="deck-note" id="render-status-note"></p>
   </div>
 
   <div class="deck-section">
@@ -86,15 +87,14 @@
   </div>
 </footer>
 
-<!-- Station tag template (cloned via JS on map click) -->
-<template id="station-tag-template">
-  <div class="station-tag">
-    <div class="tag-row tag-title"></div>
-    <div class="tag-row tag-value"></div>
-    <div class="tag-row tag-coord"></div>
-    <div class="tag-row tag-time"></div>
-  </div>
-</template>
+<!-- Cursor tag — follows the mouse and updates continuously while hovering
+     the map, instead of requiring a click. Hidden until the first move. -->
+<div class="cursor-tag hidden" id="cursor-tag">
+  <div class="tag-row tag-title" id="cursor-tag-title"></div>
+  <div class="tag-row tag-value" id="cursor-tag-value"></div>
+  <div class="tag-row tag-coord" id="cursor-tag-coord"></div>
+  <div class="tag-row tag-time" id="cursor-tag-time"></div>
+</div>
 
 <!-- About panel -->
 <div class="about-veil" id="about-veil">
@@ -114,6 +114,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="config.js"></script>
 <script src="palettes.js"></script>
+<script src="gridrender.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
