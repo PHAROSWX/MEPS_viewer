@@ -1,15 +1,22 @@
 // palettes.js
 // -----------------------------------------------------------------------------
-// Color ramps extracted directly from the user-supplied QGIS .qml style files
-// (temperature_color_table.qml, cape_color_table.qml, snow_color_table2.qml).
+// Color ramps for the map legend. Two different sources feed this file:
+//
+//   - temperature, cape: hand-authored QGIS .qml color ramps
+//     (temperature_color_table.qml, cape_color_table.qml), parsed exactly.
+//   - gusts, precip, mslp, cloud, snow: pixel-sampled from reference legend
+//     screenshots (see the palette-extraction note further down).
+//
 // Each stop is [value, hexColor]; render() linearly interpolates between the
 // two nearest stops, same as QGIS's "INTERPOLATED" colorrampshader mode.
 //
-// wind_color.qml was NOT included here — it's a categorized *vector* style
-// (buckets "5% / 15% / 30% / 45% / 60%" with fill colors), not a continuous
-// m/s ramp, so it doesn't map onto a wind-speed gradient the way the other
-// three do. If you can tell me what those buckets represent (gust risk?
-// probability of >X m/s?) I can wire up a matching discrete legend instead.
+// wind_color.qml was NOT used for the wind palette below — it's a
+// categorized *vector* style (buckets "5% / 15% / 30% / 45% / 60%" with fill
+// colors), not a continuous m/s ramp, so it doesn't map onto a wind-speed
+// gradient the way the others do. "wind" instead uses the gusts palette
+// (see PALETTE_BY_KIND below), sourced from a real wind-gusts legend. If you
+// can tell me what those wind_color.qml buckets represent (gust risk?
+// probability of >X m/s?) I can still wire up a matching discrete overlay.
 
 const METAR_PALETTES = {
   temperature: {
@@ -36,39 +43,91 @@ const METAR_PALETTES = {
     ],
   },
 
-  // NOTE: this ramp is identical in range/shape to a temperature ramp
-  // (-40..50), just finer-grained. The source file's embedded layer name
-  // was literally "night" (night.tif), which doesn't read as snow either.
-  // Wiring it up under the "snow" key for now, but flag this to the user —
-  // it may need a real snow-depth/accumulation ramp (typically 0..a few
-  // hundred cm) instead.
-  snow: {
-    unit: "°C (unverified — see note in palettes.js)",
+  // Wind gusts, 1h (m/s). Pixel-sampled from a reference legend image and
+  // matched to its printed tick labels — see palette-extraction note at the
+  // bottom of this file. Also used for the "wind" field kind, since we don't
+  // have a separate sustained-wind-speed reference ramp; gusts and sustained
+  // speed share units and a similar visual range, but if you get a proper
+  // wind_speed-specific ramp later, split this out.
+  gusts: {
+    unit: "m/s",
     stops: [
-      [-40, "#ff6eff"], [-38, "#ff46f8"], [-36, "#f627eb"], [-35, "#e522de"],
-      [-33, "#d41dd1"], [-30, "#c318c4"], [-29, "#b414b9"], [-28, "#a510ae"],
-      [-27, "#960ca3"], [-26, "#870898"], [-25, "#78048d"], [-24, "#64007f"],
-      [-23, "#57007f"], [-22, "#4b007f"], [-21, "#3e007f"], [-20, "#32007f"],
-      [-19, "#00287f"], [-18, "#00327f"], [-17, "#003c7f"], [-16, "#00467f"],
-      [-15, "#00528f"], [-14, "#0062af"], [-13, "#0072cf"], [-12, "#0082ef"],
-      [-11, "#1392ff"], [-10, "#259aff"], [-9, "#49acff"], [-8, "#5bb4ff"],
-      [-7, "#6dbcff"], [-6, "#7fc4ff"], [-5, "#91ccff"], [-4, "#9ad0ff"],
-      [-3, "#a3d4ff"], [-2, "#b5dcff"], [-1, "#c7e4ff"], [0, "#d9ecff"],
-      [1, "#b1f1d6"], [2, "#95dfbc"], [3, "#87d3ab"], [4, "#62af88"],
-      [5, "#4a9775"], [6, "#07a127"], [7, "#08b30f"], [8, "#21bb0e"],
-      [9, "#39c20c"], [10, "#52ca0b"], [11, "#84d908"], [12, "#9ce106"],
-      [13, "#b5e805"], [14, "#cef003"], [15, "#e6f702"], [16, "#f3fb01"],
-      [17, "#ebe816"], [18, "#f4d90b"], [19, "#f4cb0b"], [20, "#f4bd0b"],
-      [21, "#f4a20b"], [22, "#f4880b"], [23, "#f47a0b"], [24, "#f46d0b"],
-      [25, "#f4520b"], [26, "#e83709"], [27, "#dc2708"], [28, "#c41a0a"],
-      [29, "#ba130f"], [30, "#af0f14"], [31, "#8c0000"], [32, "#780000"],
-      [33, "#640000"], [34, "#8c3232"], [35, "#b46464"], [36, "#c87878"],
-      [37, "#f0a0a0"], [38, "#ffb4b4"], [39, "#ffc8c8"], [40, "#ffdcdc"],
-      [42, "#fff0f0"], [44, "#e2e2e2"], [45, "#c5c5c5"], [47, "#a8a8a8"],
-      [49, "#8a8a8a"], [50, "#6d6d6d"],
+      [1.5, "#707f7f"], [4, "#5a787d"], [7, "#3c5c7d"], [10, "#28527a"],
+      [13, "#1e4b7a"], [16, "#0f5a0f"], [19, "#1b691e"], [22, "#287828"],
+      [25, "#4b7a46"], [28, "#7f7d55"], [31, "#7f743c"], [34, "#7f601e"],
+      [37, "#7f3000"], [40, "#7a1900"], [43, "#700a00"], [46, "#520000"],
+      [49, "#54005d"], [52, "#761d7f"], [55, "#7f7f7f"], [58, "#7d7873"],
+      [61, "#786e69"], [64, "#705f5a"], [67, "#5a4641"], [70, "#503c37"],
+      [73, "#46322d"], [75, "#321e19"], [90, "#321e19"], // 90 = flat "off-scale" cap color beyond 75
+    ],
+  },
+
+  // Precipitation, 1h (mm). Same source/method as gusts above.
+  precip: {
+    unit: "mm",
+    stops: [
+      [0.1, "#787878"], [0.2, "#5a6b7f"], [0.5, "#3a5d7f"], [1, "#1a4d7f"],
+      [2, "#02417f"], [3, "#003469"], [4, "#001b3f"], [5, "#0a470d"],
+      [6, "#0d6702"], [7, "#317603"], [8, "#7f7a15"], [9, "#746e00"],
+      [10, "#783000"], [12, "#7f5335"], [14, "#7c273c"], [16, "#7b0f2a"],
+      [20, "#5f0000"], [24, "#440000"], [30, "#32003f"], [40, "#61007d"],
+      [50, "#6e337f"], [60, "#75537f"], [80, "#7c737f"], [100, "#6a6a6a"],
+      [125, "#4b4b4b"],
+    ],
+  },
+
+  // Mean sea level pressure (hPa). Same source/method as gusts above.
+  mslp: {
+    unit: "hPa",
+    stops: [
+      [900, "#7f237c"], [915, "#6a0e68"], [930, "#520857"], [942, "#43044c"],
+      [954, "#2b003f"], [966, "#00143f"], [974, "#002947"], [980, "#09497f"],
+      [986, "#48667f"], [992, "#58786b"], [998, "#315744"], [1004, "#045907"],
+      [1010, "#296505"], [1016, "#677801"], [1022, "#7a6505"], [1028, "#7a4a05"],
+      [1034, "#741b04"], [1040, "#460000"], [1046, "#5a3232"], [1052, "#785050"],
+      [1058, "#7f6e6e"], [1062, "#626262"],
+    ],
+  },
+
+  // Total cloud cover (%). Same source/method as gusts above.
+  cloud: {
+    unit: "%",
+    stops: [
+      [1, "#ecd905"], [10, "#dac909"], [20, "#c7b80e"], [30, "#b4a712"],
+      [40, "#a29617"], [50, "#8f861b"], [60, "#7d7520"], [70, "#6a6424"],
+      [80, "#575329"], [90, "#45432d"], [99, "#323232"],
+    ],
+  },
+
+  // Snow depth (cm) — replaces the earlier placeholder that was flagged as
+  // likely mislabeled (a temperature-shaped ramp under a "night.tif" name in
+  // its source .qml). This one is a real snow-depth reference legend.
+  snow: {
+    unit: "cm",
+    stops: [
+      [0.1, "#dcdcfa"], [0.5, "#aaaac8"], [1, "#75baff"], [2, "#359aff"],
+      [3, "#0482ff"], [4, "#0069d2"], [5, "#004f9d"], [7, "#00327f"],
+      [10, "#4b007f"], [15, "#64007f"], [20, "#9100bb"], [30, "#c200fb"],
+      [40, "#d135ff"], [50, "#eba6ff"], [60, "#f4ceff"], [70, "#fab2cb"],
+      [80, "#ff9697"], [100, "#ff6e6e"], [150, "#df093f"], [200, "#bf0000"],
+      [250, "#a40000"], [300, "#880000"], [400, "#460000"],
     ],
   },
 };
+
+// -----------------------------------------------------------------------------
+// Palette-extraction note (gusts/precip/mslp/cloud/snow): these five were
+// pixel-sampled from reference legend screenshots (a color bar image + its
+// printed tick labels), not hand-authored .qml files like temperature/cape.
+// Method: locate the horizontal gradient bar in the image, walk it pixel by
+// pixel to find distinct color blocks, then match those blocks to the
+// printed tick values in left-to-right order (resampling if the pixel-block
+// count and tick-label count didn't match exactly, which happens when a bar
+// is rendered with more/finer color steps than it has printed labels for).
+// CAPE was cross-checked against the independently-sourced cape_color_table
+// .qml file and matched exactly, which is a good sanity check on the method
+// — but treat these five as a close, verified-where-possible approximation
+// of the source legend rather than a pixel-perfect reproduction.
 
 // Which of our field "kind"s (see PREFERRED_FIELDS in config.js) has a
 // matching custom palette here.
@@ -76,7 +135,10 @@ const PALETTE_BY_KIND = {
   temperature: "temperature",
   cape: "cape",
   snow: "snow",
-  // "wind" and others intentionally omitted — see note above.
+  wind: "gusts",
+  precip: "precip",
+  pressure: "mslp",
+  cloud: "cloud",
 };
 
 function hexToRgb(hex) {
