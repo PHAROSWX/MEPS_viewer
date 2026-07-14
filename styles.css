@@ -41,6 +41,19 @@ html, body {
   background: var(--bg-void);
 }
 
+/* Crosshair over the map for precise point-reading (station-tag clicks),
+   instead of Leaflet's default open-hand cursor. Panning still shows
+   grab/grabbing so drag feedback isn't lost. */
+.leaflet-container {
+  cursor: crosshair;
+}
+.leaflet-grab {
+  cursor: crosshair;
+}
+.leaflet-dragging .leaflet-grab {
+  cursor: grabbing;
+}
+
 /* Leaflet dark-map tuning */
 .leaflet-tile-pane { filter: saturate(0.9) brightness(0.95); }
 .leaflet-control-attribution {
