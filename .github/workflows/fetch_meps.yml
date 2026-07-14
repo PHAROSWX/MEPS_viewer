@@ -8,10 +8,10 @@ on:
     - cron: "15 */3 * * *"
   workflow_dispatch:
     inputs:
-      time_mode:
-        description: "present (single latest step, fast) or all (full aggregation, slow)"
+      timesteps:
+        description: "Number of hourly forecast steps to fetch from FMI"
         required: false
-        default: "present"
+        default: "12"
       bbox:
         description: "west,south,east,north or 'none' for full domain"
         required: false
@@ -32,7 +32,7 @@ jobs:
 
       - name: Fetch latest MEPS subset
         env:
-          MEPS_TIME_MODE: ${{ github.event.inputs.time_mode || 'present' }}
+          MEPS_TIMESTEPS: ${{ github.event.inputs.timesteps || '12' }}
           MEPS_BBOX: ${{ github.event.inputs.bbox }}
         run: python3 scripts/fetch_meps.py
 
