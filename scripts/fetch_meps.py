@@ -37,8 +37,8 @@ import urllib.parse
 import urllib.request
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-OUTPUT_FILE = os.path.join(OUTPUT_DIR, "meps_latest.nc")
-OUTPUT_META = os.path.join(OUTPUT_DIR, "meps_latest.meta.json")
+OUTPUT_BASENAME = "meps_latest"
+OUTPUT_META = os.path.join(OUTPUT_DIR, OUTPUT_BASENAME + ".meta.json")
 
 RETRIES = 3
 RETRY_BACKOFF_SECONDS = 10
@@ -84,19 +84,46 @@ DEFAULT_BBOX = (4.0, 57.0, 32.0, 71.5)  # west, south, east, north
 DEFAULT_TIMESTEPS = 12
 DEFAULT_TIMESTEP_MINUTES = 60
 
+# v3 first attempt used format=netcdf at native ~2.5km resolution over the
+# whole bbox above — that came back as 257 MB, well past GitHub's 100 MB
+# hard file-size limit (this repo isn't using Git LFS, and a growing binary
+# blob on every hourly commit would be a bad idea even if it were). Two
+# changes fix the actual size problem instead of reaching for LFS:
+#
+#   1. format=grib2 instead of netcdf — GRIB2 is a packed/compressed format,
+#      typically 5-10x smaller than raw NetCDF floats for the same data.
+#   2. gridresolution — explicitly downsamples the grid (native MEPS
+#      resolution is 2.5km; this requests 5km, a 4x reduction in point
+#      count) rather than shipping every native grid cell for an archival
+#      snapshot that doesn't need full resolution.
+#
+# Rough sizing at these defaults: ~270 x 320 grid points x 12 timesteps x
+# 7 variables x ~2 bytes packed ≈ 15 MB — comfortable headroom under 100 MB.
+# Override with MEPS_GRIDRESOLUTION_KM if you want native-resolution data
+# for a smaller area instead.
+DEFAULT_GRIDRESOLUTION_KM = 5.0
+
+# Hard safety cap: if FMI ever returns something much bigger than expected
+# (e.g. a future parameter change re-inflates the response), fail loudly
+# and don't write/commit a file that would just get rejected by GitHub's
+# push anyway. Comfortably under the 100 MB hard limit.
+MAX_OUTPUT_BYTES = 60 * 1024 * 1024
+
 
 def fetch_from_fmi() -> bytes:
     bbox_env = os.environ.get("MEPS_BBOX")
     bbox = None if bbox_env == "none" else (
         tuple(float(x) for x in bbox_env.split(",")) if bbox_env else DEFAULT_BBOX
     )
+    gridres = os.environ.get("MEPS_GRIDRESOLUTION_KM", str(DEFAULT_GRIDRESOLUTION_KM))
     params = {
         "producer": FMI_PRODUCER,
         "param": ",".join(FMI_VARIABLES),
-        "format": "netcdf",
+        "format": "grib2",
         "projection": "EPSG:4326",
         "timestep": os.environ.get("MEPS_TIMESTEP_MINUTES", str(DEFAULT_TIMESTEP_MINUTES)),
         "timesteps": os.environ.get("MEPS_TIMESTEPS", str(DEFAULT_TIMESTEPS)),
+        "gridresolution": f"{gridres},{gridres}",
     }
     if bbox:
         params["bbox"] = ",".join(str(v) for v in bbox)
@@ -181,15 +208,18 @@ def main():
 
     source_used = None
     data = None
+    file_ext = None
     try:
         data = fetch_from_fmi()
         source_used = "fmi:" + FMI_PRODUCER
+        file_ext = ".grib2"
     except Exception as e:
         print(f"FMI fetch failed: {e}", file=sys.stderr)
         print("Falling back to MET Norway THREDDS...", file=sys.stderr)
         try:
             data = fetch_from_thredds()
             source_used = "met.no thredds"
+            file_ext = ".nc"
         except Exception as e2:
             print(f"THREDDS fallback also failed: {e2}", file=sys.stderr)
             print(
@@ -205,14 +235,35 @@ def main():
               f"{data[:300]!r}", file=sys.stderr)
         return 1
 
-    with open(OUTPUT_FILE, "wb") as f:
+    if len(data) > MAX_OUTPUT_BYTES:
+        print(
+            f"Response is {len(data) / 1024 / 1024:.1f} MB, over the {MAX_OUTPUT_BYTES / 1024 / 1024:.0f} MB "
+            f"safety cap (GitHub's hard limit is 100 MB). Not writing/committing this file — it would just "
+            f"fail at push time anyway. Shrink MEPS_TIMESTEPS, widen MEPS_GRIDRESOLUTION_KM, or narrow "
+            f"MEPS_BBOX and try again.",
+            file=sys.stderr,
+        )
+        return 1
+
+    output_file = os.path.join(OUTPUT_DIR, OUTPUT_BASENAME + file_ext)
+    # Clean up a stale file from a previous run in the *other* format, so
+    # the repo doesn't accumulate both meps_latest.nc and meps_latest.grib2
+    # if the source ever switches between runs.
+    for other_ext in (".nc", ".grib2"):
+        if other_ext != file_ext:
+            stale = os.path.join(OUTPUT_DIR, OUTPUT_BASENAME + other_ext)
+            if os.path.exists(stale):
+                os.remove(stale)
+
+    with open(output_file, "wb") as f:
         f.write(data)
     with open(OUTPUT_META, "w") as f:
         f.write(
-            '{"source": "%s", "fetched_at": "%s", "size_bytes": %d}\n'
-            % (source_used, datetime.datetime.utcnow().isoformat() + "Z", len(data))
+            '{"source": "%s", "fetched_at": "%s", "size_bytes": %d, "file": "%s"}\n'
+            % (source_used, datetime.datetime.now(datetime.timezone.utc).isoformat(), len(data),
+               OUTPUT_BASENAME + file_ext)
         )
-    print(f"OK — wrote {OUTPUT_FILE} ({len(data)} bytes) from {source_used}")
+    print(f"OK — wrote {output_file} ({len(data)} bytes) from {source_used}")
     return 0
 
 
