@@ -368,25 +368,25 @@ html, body {
 }
 
 /* -------------------------------------------------------------------------
-   Station tag — the signature element. Styled like a punch-card / METAR
-   ticket pinned to the map at the clicked point.
+   Cursor tag — the signature element. Styled like a punch-card / METAR
+   ticket, follows the cursor and updates continuously while hovering the
+   map (see app.js), rather than requiring a click.
 ------------------------------------------------------------------------- */
-.leaflet-popup-content-wrapper {
+.cursor-tag {
+  position: fixed;
+  z-index: 1500;
+  pointer-events: none;
   background: var(--paper);
   color: var(--paper-ink);
   border-radius: 4px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.45);
-}
-.leaflet-popup-tip { background: var(--paper); }
-.leaflet-popup-content { margin: 0; }
-.leaflet-popup-close-button {
-  color: var(--paper-ink) !important;
-}
-
-.station-tag {
   font-family: var(--font-mono);
   padding: 10px 12px;
   min-width: 150px;
+  transition: opacity 0.1s ease;
+}
+.cursor-tag.hidden {
+  opacity: 0;
 }
 .tag-row { line-height: 1.5; }
 .tag-title {
