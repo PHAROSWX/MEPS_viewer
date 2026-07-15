@@ -38,8 +38,8 @@ const MEPS_CONFIG = {
     { match: ["cloud_area_fraction", "cloud"], label: "Cloud cover", unit: "%", kind: "cloud" },
     { match: ["air_pressure_at_sea_level", "surface_air_pressure", "pressure"], label: "Mean sea level pressure", unit: "hPa", kind: "pressure" },
     { match: ["relative_humidity"], label: "Relative humidity · 2m", unit: "%", kind: "humidity" },
-    { match: ["specific_convective_available_potential_energy", "cape"], label: "CAPE", unit: "J/kg", kind: "cape" },
-    { match: ["snowfall_amount", "lwe_snowfall", "snow"], label: "Snow depth", unit: "cm", kind: "snow" },
+    { match: ["specific_convective_available_potential_energy", "convective_available_potential_energy"], label: "CAPE", unit: "J/kg", kind: "cape" },
+    { match: ["surface_snow_thickness", "snow_depth"], label: "Snow depth", unit: "cm", kind: "snow" },
   ],
 
   // Well-known CF unit conversions, applied automatically when the server
